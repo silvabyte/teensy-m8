@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_SRC="$SCRIPT_DIR/m8c-config.ini"
 CONFIG_DST="${XDG_DATA_HOME:-$HOME/.local/share}/m8c/config.ini"
 
-for bin in m8c sc-controller-daemon; do
+for bin in m8c scc-daemon; do
     command -v "$bin" >/dev/null || { echo "Missing: $bin (run ./setup.sh first)"; exit 1; }
 done
 
@@ -37,9 +37,9 @@ fi
 # Start the sc-controller daemon if it isn't already running.
 # It uses its 'Default' profile, which emulates an Xbox 360 controller -- exactly
 # what m8c's default gamepad layout (configured in m8c-config.ini) expects.
-if ! pgrep -x sc-controller-daemon >/dev/null; then
+if ! pgrep -f scc-daemon >/dev/null; then
     echo ">> Starting sc-controller daemon..."
-    sc-controller-daemon start
+    scc-daemon start
     sleep 1
 else
     echo ">> sc-controller daemon already running"
