@@ -13,18 +13,12 @@ for bin in pw-loopback pactl wpctl; do
     command -v "$bin" >/dev/null || { echo "Missing: $bin (install pipewire + pipewire-pulse)"; exit 1; }
 done
 
-# Find the M8 audio source. We match against both node.name and the friendly
-# description, since the Teensy's node.name may not contain "M8" verbatim
-# while the description always does ("M8 Analog Stereo").
+# Find the M8 audio source by node name. Skip ".monitor" sources -- those expose
+# audio going INTO a sink, not audio coming FROM a capture device. The M8's
+# input node name is alsa_input.usb-Dirtywave_M8_*.analog-stereo.
 find_m8_source() {
-    pactl list sources 2>/dev/null | awk '
-        /^Source #/         { name=""; desc="" }
-        /^\tName: /         { name=$2 }
-        /^\tDescription: /  { sub(/^\tDescription: /, ""); desc=$0 }
-        /^$/                {
-            if (tolower(name desc) ~ /m8|teensy/) { print name; exit }
-        }
-    '
+    pactl list short sources 2>/dev/null \
+        | awk -F'\t' 'tolower($2) ~ /m8|dirtywave|teensy/ && $2 !~ /\.monitor$/ { print $2; exit }'
 }
 
 SRC_NAME="$(find_m8_source || true)"
