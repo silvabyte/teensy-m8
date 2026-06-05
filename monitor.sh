@@ -9,23 +9,22 @@
 
 set -euo pipefail
 
-for bin in pw-loopback pw-cli wpctl; do
-    command -v "$bin" >/dev/null || { echo "Missing: $bin (install pipewire)"; exit 1; }
+for bin in pw-loopback pactl wpctl; do
+    command -v "$bin" >/dev/null || { echo "Missing: $bin (install pipewire + pipewire-pulse)"; exit 1; }
 done
 
-# Find the M8 audio source node. The Teensy enumerates as a USB-audio class
-# device; node.name typically looks like:
-#   alsa_input.usb-Teensyduino_Teensy_MIDI_Audio-00.analog-stereo
-# We match on 'teensy' or 'm8' case-insensitively and pick a Source.
+# Find the M8 audio source. We match against both node.name and the friendly
+# description, since the Teensy's node.name may not contain "M8" verbatim
+# while the description always does ("M8 Analog Stereo").
 find_m8_source() {
-    pw-cli ls Node 2>/dev/null | awk '
-        /node\.name/        { gsub(/"/, "", $3); name = $3 }
-        /media\.class/      { gsub(/"/, "", $3); cls  = $3 }
-        /^\s*$/             {
-            if (cls == "Audio/Source" && tolower(name) ~ /teensy|m8/) print name
-            name=""; cls=""
+    pactl list sources 2>/dev/null | awk '
+        /^Source #/         { name=""; desc="" }
+        /^\tName: /         { name=$2 }
+        /^\tDescription: /  { sub(/^\tDescription: /, ""); desc=$0 }
+        /^$/                {
+            if (tolower(name desc) ~ /m8|teensy/) { print name; exit }
         }
-    ' | head -n1
+    '
 }
 
 SRC_NAME="$(find_m8_source || true)"
