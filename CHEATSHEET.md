@@ -1,19 +1,20 @@
 # M8 Cheatsheet
 
-Steam Controller → m8c → M8.
+Keyboard → m8c → M8.
 
-## Button map
+## Key map
 
-| Steam Controller | M8 button | Notes |
+| Key | M8 button | Notes |
 |---|---|---|
-| D-pad / left stick | UP / DOWN / LEFT / RIGHT | Navigate cells |
-| **A** | EDIT | Enter cell, change value |
-| **B** | OPT | Secondary / modifier |
-| **Y** | SHIFT (Select) | Modifier |
-| **Start** | PLAY | Play / pause |
-| Back | _unused_ | (was SHIFT — moved to Y for comfort) |
-| Guide | quit m8c | |
-| L-stick click | reset M8 | |
+| Arrow keys | UP / DOWN / LEFT / RIGHT | Navigate cells |
+| **S** (or LShift) | EDIT | Enter cell, change value |
+| **A** (or LAlt) | OPT | Secondary / modifier |
+| **Z** (or Space) | SHIFT (Select) | Modifier |
+| **X** (or LCtrl) | PLAY | Play / pause |
+| `Delete` | DELETE | Clear value |
+| `R` | RESET | Reset M8 |
+| `7` / `9` | Jazz octave −/+ | Live-play modifier |
+| `0` / `Esc` | Jazz velocity −/+ | Live-play modifier |
 
 The M8 has only 8 buttons: 4 directions + **SHIFT, PLAY, OPT, EDIT**. Everything is combos.
 

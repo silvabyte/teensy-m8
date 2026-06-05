@@ -1,40 +1,39 @@
 # teensy-m8
 
-M8 headless on a Teensy 4.1, driven by a wired Steam Controller, on Arch Linux.
+M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 
 ## Hardware
 
 - Teensy 4.1
 - microSD (≤32GB: FAT32 / >32GB: exFAT)
-- Steam Controller + USB cable
 - microUSB cable, plugged directly into the PC (no hub)
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `setup.sh` | Installs deps, drops udev rules, adds you to `uinput` group |
+| `setup.sh` | Installs deps and drops the Teensy udev rule |
 | `flash.sh` | Downloads the latest M8 headless `.hex` and flashes the Teensy |
-| `run.sh` | Starts `sc-controller-daemon` and launches `m8c` |
+| `run.sh` | Launches `m8c` |
 | `monitor.sh` | Routes M8 audio into your default sink via `pw-loopback` |
 | `fetch-content.sh` | Pulls community samples / instruments / themes into `./content/` |
 | `prep-samples.sh` | Batch-converts a folder of audio to M8-ready WAV (44.1k / 16-bit) |
-| `m8c-config.ini` | Gamepad mapping (copied into `~/.local/share/m8c/` by `run.sh`) |
-| `udev/` | udev rules for Teensy + Steam Controller |
+| `m8c-config.ini` | Keyboard mapping (copied into `~/.local/share/m8c/` by `run.sh`) |
+| `udev/` | udev rule for the Teensy |
 
 ## Steps
 
-1. **Setup** &nbsp; `./setup.sh` &nbsp; (log out + back in if it added you to `uinput`)
+1. **Setup** &nbsp; `./setup.sh`
 2. **Flash** &nbsp; Plug in Teensy → `./flash.sh` → press the button when prompted
 3. **microSD** &nbsp; Format, insert into the Teensy
-4. **Play** &nbsp; Plug in Steam Controller → `./run.sh`
+4. **Play** &nbsp; `./run.sh`
 5. **Hear it** &nbsp; In a second terminal: `./monitor.sh`
 
 ## Controls
 
-See [CHEATSHEET.md](./CHEATSHEET.md) for the Steam Controller → M8 button map and the essential M8 combos.
+See [CHEATSHEET.md](./CHEATSHEET.md) for the keyboard → M8 button map and the essential M8 combos.
 
-Remap on the SC side via the `sc-controller` GUI; m8c picks up changes live.
+Remap by editing `m8c-config.ini` (SDL scancodes) and re-running `./run.sh`.
 
 ## SD card content
 
@@ -75,7 +74,6 @@ More: [patchstorage.com (Dirtywave M8)](https://patchstorage.com/platform/dirtyw
 ```
 lsusb | grep 16c0                          # M8 enumerated (product 0489)
 wpctl status | grep -iE 'teensy|m8'        # audio source visible
-ls /dev/input/by-id/ | grep -i steam       # SC visible
 ```
 
 ## Always-on audio monitor
