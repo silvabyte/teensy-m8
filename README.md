@@ -30,17 +30,7 @@ M8 headless on a Teensy 4.1, driven by a wired Steam Controller, on Arch Linux.
 
 ## Controls
 
-Default sc-controller profile emulates an Xbox pad. m8c reads it as:
-
-| Steam Controller | M8 |
-|---|---|
-| D-pad / left stick | Up / Down / Left / Right |
-| A | Edit |
-| B | Opt |
-| Back | Select |
-| Start | Start |
-| Guide | Quit |
-| L-stick click | Reset |
+See [CHEATSHEET.md](./CHEATSHEET.md) for the Steam Controller → M8 button map and the essential M8 combos.
 
 Remap on the SC side via the `sc-controller` GUI; m8c picks up changes live.
 
