@@ -35,8 +35,6 @@ if ! { compgen -G "/dev/serial/by-id/*Teensyduino*" >/dev/null \
 fi
 
 # Start the sc-controller daemon if it isn't already running.
-# It uses its 'Default' profile, which emulates an Xbox 360 controller -- exactly
-# what m8c's default gamepad layout (configured in m8c-config.ini) expects.
 if ! pgrep -f scc-daemon >/dev/null; then
     echo ">> Starting sc-controller daemon..."
     scc-daemon start
@@ -44,6 +42,19 @@ if ! pgrep -f scc-daemon >/dev/null; then
 else
     echo ">> sc-controller daemon already running"
 fi
+
+# SCC starts controllers with profile=None — physical buttons then leak through
+# as desktop kbd/mouse events instead of XInput. Pin the XBox profile so
+# m8c-config.ini's gamepad bindings actually receive button events.
+SCC_PROFILE="XBox Controller"
+echo ">> Setting SCC profile: $SCC_PROFILE"
+for _ in {1..5}; do
+    if scc info 2>/dev/null | grep -q 'Controller Count: [1-9]'; then
+        scc set-profile "$SCC_PROFILE" || true
+        break
+    fi
+    sleep 1
+done
 
 echo ">> Launching m8c..."
 exec m8c

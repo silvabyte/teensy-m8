@@ -9,8 +9,9 @@ Steam Controller → m8c → M8.
 | D-pad / left stick | UP / DOWN / LEFT / RIGHT | Navigate cells |
 | **A** | EDIT | Enter cell, change value |
 | **B** | OPT | Secondary / modifier |
-| **Back** | SHIFT (Select) | Modifier |
+| **Y** | SHIFT (Select) | Modifier |
 | **Start** | PLAY | Play / pause |
+| Back | _unused_ | (was SHIFT — moved to Y for comfort) |
 | Guide | quit m8c | |
 | L-stick click | reset M8 | |
 
