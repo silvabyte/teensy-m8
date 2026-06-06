@@ -21,7 +21,14 @@ find_m8_source() {
         | awk -F'\t' 'tolower($2) ~ /m8|dirtywave|teensy/ && $2 !~ /\.monitor$/ { print $2; exit }'
 }
 
-SRC_NAME="$(find_m8_source || true)"
+# The M8 audio source can take a moment to register after plug-in (and play.sh
+# launches us before m8c is up), so retry for ~10s before giving up.
+SRC_NAME=""
+for _ in {1..10}; do
+    SRC_NAME="$(find_m8_source || true)"
+    [[ -n "$SRC_NAME" ]] && break
+    sleep 1
+done
 if [[ -z "$SRC_NAME" ]]; then
     echo "Could not find an M8 / Teensy audio source."
     echo ""

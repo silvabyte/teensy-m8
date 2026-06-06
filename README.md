@@ -14,6 +14,7 @@ M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 |---|---|
 | `setup.sh` | Installs deps and drops the Teensy udev rule |
 | `flash.sh` | Downloads the latest M8 headless `.hex` and flashes the Teensy |
+| `play.sh` | Runs `run.sh` + `monitor.sh` together — one command, one terminal |
 | `run.sh` | Launches `m8c` |
 | `monitor.sh` | Routes M8 audio into your default sink via `pw-loopback` |
 | `fetch-content.sh` | Pulls community samples / instruments / themes into `./content/` |
@@ -27,8 +28,9 @@ M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 1. **Setup** &nbsp; `./setup.sh`
 2. **Flash** &nbsp; Plug in Teensy → `./flash.sh` → press the button when prompted
 3. **microSD** &nbsp; Format, insert into the Teensy
-4. **Play** &nbsp; `./run.sh`
-5. **Hear it** &nbsp; In a second terminal: `./monitor.sh`
+4. **Play + hear it** &nbsp; `./play.sh` (launches `m8c` and routes audio; Ctrl+C stops both)
+
+Prefer separate terminals? Run `./run.sh` in one and `./monitor.sh` in another.
 
 ## Controls
 
