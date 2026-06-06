@@ -15,8 +15,11 @@ PACMAN_PKGS=(
 )
 AUR_PKGS=(m8c-bin)
 
-echo ">> Installing official repo packages..."
-sudo pacman -S --needed --noconfirm "${PACMAN_PKGS[@]}"
+echo ">> Refreshing databases and syncing system (avoids stale-mirror 404s)..."
+# A bare 'pacman -S' uses cached db info that can point at package versions the
+# mirror no longer hosts, causing 404s. '-Syu' refreshes the db and does a full
+# sync in one transaction, which is the only partial-upgrade-safe way on Arch.
+sudo pacman -Syu --needed --noconfirm "${PACMAN_PKGS[@]}"
 
 echo ">> Installing AUR packages via yay..."
 yay -S --needed --noconfirm "${AUR_PKGS[@]}"
