@@ -1,0 +1,44 @@
+{
+    "_": "", 
+    "buttons": {
+        "A": {
+            "action": "button(Keys.KEY_SPACE)"
+        }, 
+        "B": {
+            "action": "button(Keys.KEY_X)"
+        }, 
+        "C": {
+            "action": "hold(menu('Default.menu'), menu('Default.menu'))"
+        }, 
+        "LB": {
+            "action": "button(Keys.KEY_LEFTBRACE)"
+        }, 
+        "RB": {
+            "action": "button(Keys.KEY_RIGHTBRACE)"
+        }, 
+        "X": {
+            "action": "button(Keys.KEY_LEFTSHIFT)"
+        }, 
+        "Y": {
+            "action": "button(Keys.KEY_Z)"
+        }
+    }, 
+    "cpad": {}, 
+    "dpad": {}, 
+    "gyro": {}, 
+    "is_template": false, 
+    "menus": {}, 
+    "pad_left": {}, 
+    "pad_right": {}, 
+    "rstick": {}, 
+    "stick": {
+        "action": "dpad(button(Keys.KEY_UP), button(Keys.KEY_DOWN), button(Keys.KEY_LEFT), button(Keys.KEY_RIGHT))"
+    }, 
+    "trigger_left": {
+        "action": "trigger(254, 255, button(Keys.KEY_MINUS))"
+    }, 
+    "trigger_right": {
+        "action": "trigger(254, 255, button(Keys.KEY_EQUAL))"
+    }, 
+    "version": 1.4
+}
