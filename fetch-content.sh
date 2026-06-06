@@ -12,9 +12,13 @@ CACHE="$DEST/.cache"
 STARTER_URL="https://archive.org/download/ChipmusicResources/M8_Community_SD-card_Starter_Pack.7z"
 STARTER_FILE="M8_Community_SD-card_Starter_Pack.7z"
 
-for bin in curl 7z git; do
-    command -v "$bin" >/dev/null || { echo "Missing: $bin (pacman -S p7zip git curl)"; exit 1; }
+for bin in curl git; do
+    command -v "$bin" >/dev/null || { echo "Missing: $bin (pacman -S git curl)"; exit 1; }
 done
+# Either 7z or bsdtar can unpack the .7z starter pack.
+if command -v 7z >/dev/null; then EXTRACT_7Z=(7z x -y)
+elif command -v bsdtar >/dev/null; then EXTRACT_7Z=(bsdtar -xf)
+else echo "Missing: need 7z (p7zip) or bsdtar (libarchive)"; exit 1; fi
 
 mkdir -p "$CACHE"
 
@@ -25,7 +29,12 @@ if [[ ! -d "$DEST/starter-pack" ]]; then
         curl -fL "$STARTER_URL" -o "$CACHE/$STARTER_FILE"
     fi
     echo ">> Extracting starter pack..."
-    7z x -o"$DEST/starter-pack" "$CACHE/$STARTER_FILE" >/dev/null
+    mkdir -p "$DEST/starter-pack"
+    if [[ "${EXTRACT_7Z[0]}" == 7z ]]; then
+        7z x -y -o"$DEST/starter-pack" "$CACHE/$STARTER_FILE" >/dev/null
+    else
+        bsdtar -xf "$CACHE/$STARTER_FILE" -C "$DEST/starter-pack"
+    fi
 else
     echo ">> starter-pack already extracted (skip)"
 fi

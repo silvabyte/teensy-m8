@@ -17,6 +17,7 @@ M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 | `run.sh` | Launches `m8c` |
 | `monitor.sh` | Routes M8 audio into your default sink via `pw-loopback` |
 | `fetch-content.sh` | Pulls community samples / instruments / themes into `./content/` |
+| `fetch-drums.sh` | Pulls curated classic drum-machine packs (808/909/CR-78/LinnDrum/...), M8-ready, into `./content/drums/` |
 | `prep-samples.sh` | Batch-converts a folder of audio to M8-ready WAV (44.1k / 16-bit) |
 | `m8c-config.ini` | Keyboard mapping (copied into `~/.local/share/m8c/` by `run.sh`) |
 | `udev/` | udev rule for the Teensy |
@@ -39,13 +40,21 @@ Remap by editing `m8c-config.ini` (SDL scancodes) and re-running `./run.sh`.
 
 The firmware ZIP is `.hex` only — no factory samples. Source content from the community.
 
-SD layout (FAT32 ≤32 GB / exFAT >32 GB), all at the root:
+SD layout (FAT32 ≤32 GB / exFAT >32 GB), all at the root. The headless firmware
+creates the skeleton (`Bundles Instruments Renders Samples Scales Songs System
+Themes`) on first boot:
 
 ```
-/Samples/   .wav (mono or stereo, 44.1 kHz / 16-bit recommended)
-/Songs/     .m8s  (instruments are saved inside songs, not standalone)
-/Themes/    .m8t
+/Bundles/      full projects, each in its own folder (NAME.m8s + its Instruments/ + Samples/)
+/Samples/      .wav — M8 plays 16-bit PCM only (44.1 kHz recommended), mono or stereo; subfolders OK
+/Instruments/  .m8i presets; subfolders OK
+/Songs/        standalone .m8s (reference samples by path)
+/Themes/       .m8t
 ```
+
+`/Bundles/` is the easy win: load one and its samples + instruments resolve
+automatically. The community starter pack ships its demo songs as bundles (not
+in `/Songs/`).
 
 Stage starter content locally:
 
@@ -57,7 +66,20 @@ This grabs the community starter pack (samples + songs), plus `laamaa/m8i` and
 `tobokegao` instrument packs and `d-huck/m8-themes`. Copy what you want into
 the matching dirs on the SD.
 
-For samples from outside the starter pack:
+For a drum-machine sample library (the starter pack has almost no standalone
+samples):
+
+```
+./fetch-drums.sh         # stages classic machines under ./content/drums/
+cp -r ./content/drums/* /run/media/$USER/<CARD>/Samples/
+```
+
+This grabs 808 / 909 / CR-78 / LinnDrum / 606 / 707 / 727 / Oberheim DMX+DX /
+SP-1200 / Drumulator / Drumtraks / Casio RZ-1 / Simmons SDS5 from the archive.org
+`drum-machines-collection`, transcoding any 24/32-bit samples down to the 16-bit
+PCM the M8 requires. Land them under `/Samples/DrumMachines/<Machine>/`.
+
+For samples from outside these packs:
 
 ```
 ./prep-samples.sh ~/some-folder-of-wavs
