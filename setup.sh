@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PACMAN_PKGS=(
+    ffmpeg
     teensy_loader_cli
     libserialport
     sdl2-compat

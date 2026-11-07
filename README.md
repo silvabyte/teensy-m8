@@ -19,6 +19,7 @@ M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 | `monitor.sh` | Routes M8 audio into your default sink via `pw-loopback` |
 | `fetch-content.sh` | Pulls community samples / instruments / themes into `./content/` |
 | `fetch-drums.sh` | Pulls curated classic drum-machine packs (808/909/CR-78/LinnDrum/...), M8-ready, into `./content/drums/` |
+| `add-sample.sh` | Converts, names, and copies one media file to the M8 microSD card |
 | `prep-samples.sh` | Batch-converts a folder of audio to M8-ready WAV (44.1k / 16-bit) |
 | `m8c-config.ini` | Keyboard mapping (copied into `~/.local/share/m8c/` by `run.sh`) |
 | `udev/` | udev rule for the Teensy |
@@ -82,6 +83,21 @@ SP-1200 / Drumulator / Drumtraks / Casio RZ-1 / Simmons SDS5 from the archive.or
 PCM the M8 requires. Land them under `/Samples/DrumMachines/<Machine>/`.
 
 For samples from outside these packs:
+
+```
+./add-sample.sh ~/Videos/snare.mkv "Big Snare"
+```
+
+This extracts the first audio stream, converts it to a stereo 44.1 kHz / 16-bit
+WAV, and writes `/Samples/Big Snare.wav` to the mounted M8 microSD card. If the
+card cannot be detected automatically, pass its mount point explicitly:
+
+```
+./add-sample.sh ~/Videos/snare.mkv "Big Snare" /run/media/$USER/M8CARD
+```
+
+The command refuses to overwrite an existing sample. For batch conversion
+without copying to the card, use:
 
 ```
 ./prep-samples.sh ~/some-folder-of-wavs
