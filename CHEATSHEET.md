@@ -142,6 +142,20 @@ Song  →  Chain  →  Phrase  →  Instrument / Table / Groove
 4. `EDIT` into phrase `00`. Enter notes with `EDIT` on the note column.
 5. `PLAY` to hear it.
 
+## Drum samples
+
+```
+./fetch-drums.sh --list
+./fetch-drums.sh --preset classics
+./fetch-drums.sh --card /run/media/$USER/<CARD>                 # M8 -> /Samples
+./fetch-drums.sh --target sp404 --card /run/media/$USER/<CARD>  # SP-404 -> /IMPORT
+```
+
+M8 reads 16-bit PCM from `/Samples`. The SP-404MKII imports 16-bit WAV from
+`/IMPORT` (this script writes 48 kHz / 16-bit). The full archive is larger
+than the SP-404's 2,560-sample internal memory; nothing is trimmed to fit.
+See the README for the Roland limits and the filter flags.
+
 ## RTFM
 
 The official manual is the source of truth — combos vary slightly by firmware version:
