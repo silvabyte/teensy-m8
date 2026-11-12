@@ -18,7 +18,7 @@ M8 headless on a Teensy 4.1, driven by the host keyboard, on Arch Linux.
 | `run.sh` | Launches `m8c` |
 | `monitor.sh` | Routes M8 audio into your default sink via `pw-loopback` |
 | `fetch-content.sh` | Pulls community samples / instruments / themes into `./content/` |
-| `fetch-drums.sh` | Pulls curated classic drum-machine packs (808/909/CR-78/LinnDrum/...), M8-ready, into `./content/drums/` |
+| `fetch-drums.sh` | Pulls the archive.org drum-machines-collection and stages 16-bit WAV for the M8 or the SP-404MKII |
 | `add-sample.sh` | Converts, names, and copies one media file to the M8 microSD card |
 | `prep-samples.sh` | Batch-converts a folder of audio to M8-ready WAV (44.1k / 16-bit) |
 | `m8c-config.ini` | Keyboard mapping (copied into `~/.local/share/m8c/` by `run.sh`) |
@@ -70,17 +70,61 @@ This grabs the community starter pack (samples + songs), plus `laamaa/m8i` and
 the matching dirs on the SD.
 
 For a drum-machine sample library (the starter pack has almost no standalone
-samples):
+samples), `./fetch-drums.sh` reads every ZIP from the archive.org metadata for
+`drum-machines-collection` (470 packs, 3.8 GiB / about 4.1 GB compressed) and stages
+them under `./content/drums/<target>/<Machine>/`. The default target is the M8.
+`--preset classics` is the old 15-pack set (808 / 909 / CR-78 / LinnDrum /
+606 / 707 / 727 / Oberheim DMX+DX / SP-1200 / Drumulator / Drumtraks / Casio
+RZ-1 / Simmons SDS5).
 
 ```
-./fetch-drums.sh         # stages classic machines under ./content/drums/
-cp -r ./content/drums/* /run/media/$USER/<CARD>/Samples/
+./fetch-drums.sh --list                         # names and sizes, no download
+./fetch-drums.sh --preset classics              # the original 15, for the M8
+./fetch-drums.sh --include 'TR808|TR-909' -j 3
+./fetch-drums.sh --card /run/media/$USER/<CARD>
+./fetch-drums.sh --target sp404 --card /run/media/$USER/<CARD>
 ```
 
-This grabs 808 / 909 / CR-78 / LinnDrum / 606 / 707 / 727 / Oberheim DMX+DX /
-SP-1200 / Drumulator / Drumtraks / Casio RZ-1 / Simmons SDS5 from the archive.org
-`drum-machines-collection`, transcoding any 24/32-bit samples down to the 16-bit
-PCM the M8 requires. Land them under `/Samples/DrumMachines/<Machine>/`.
+`--include` / `--exclude` are extended regexes matched against the folder name
+and the zip name. Repeat either flag: includes are OR, then excludes drop
+matches. `-j` is how many machines to fetch at once (default 3).
+
+Zips land in `content/.cache/drum-machines` and are extracted once, so running
+M8 and then SP-404 does not download twice. A finished zip is skipped when its
+size matches the metadata (a new download is also checked against the md5).
+Partial downloads stay in a `.part` file. Already-staged WAV files are skipped.
+One machine failing is logged; the rest continue; the script exits non-zero
+and prints the failures.
+
+`--card` copies the staged tree with `rsync -a` when rsync exists, otherwise
+`cp -a`. It never deletes files already on the card.
+
+**M8** (`--target m8`, the default). 16-bit PCM WAV. A file that is already
+16-bit is copied unchanged; anything else is rewritten to 44.1 kHz / 16-bit.
+`--card` puts each machine in `/Samples/<Machine>/`.
+
+**SP-404MKII** (`--target sp404`). 48 kHz / 16-bit linear WAV, which is what
+the unit stores. SD import accepts 16-bit linear WAV, AIFF, or MP3 from the
+`IMPORT` folder, including subfolders, and converts imports to 48 kHz / 16-bit.
+`--card` puts each machine in `/IMPORT/<Machine>/`.
+
+The reference manual caps internal storage at 2,560 samples and 16 GB
+(including the preload data), and each sample at about 16 minutes / 185 MB.
+That per-sample cap applies to SD import too. Archive.org's zip file counts
+sum to about 49,000 entries across the 470 packs, which is more than 2,560
+samples, so the whole library cannot live in the unit at once. The script
+copies every file and says so. It does not drop files, split folders, or
+shorten names to fit. The manual does not state a per-folder file cap. Files
+shorter than 100 ms may fail to import. Filenames longer than 80 characters
+crashed on import before system v4.06 (fixed in that version). On-device
+sample names are 23 characters when you rename them on the unit; filenames on
+the card are left as they are.
+
+Roland pages used for the SP-404 output:
+[import formats](https://support.roland.com/hc/en-us/articles/4408190553883-SP-404MK2-What-audio-file-formats-can-be-imported-into-the-SP-404MK2),
+[IMPORT SAMPLE](https://static.roland.com/manuals/sp-404mk2_reference_v550/en-US/7958977178537867.html),
+[main specifications](https://static.roland.com/manuals/sp-404mk2_reference_v550/en-US/8010023578592395.html),
+[maximum sampling time](https://support.roland.com/hc/en-us/articles/4408196941851-SP-404MK2-Maximum-Sampling-Time).
 
 For samples from outside these packs:
 
