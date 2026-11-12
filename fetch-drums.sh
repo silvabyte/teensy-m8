@@ -6,9 +6,20 @@
 # not a hardcoded set. Zips are cached and extracted once under
 # content/.cache, so a later run for the other target does not re-download.
 #
+# Sources are WAV plus AIFF/FLAC/MP3/OGG. Non-WAV audio is converted to WAV
+# and the staged name ends in .wav. A pack with no audio fails as
+# "no audio files".
+#
+# Some WAVs in this archive are valid PCM that ffmpeg rejects outright:
+# a zero-length LIST chunk ("too short LIST tag"), or format tag 3 (IEEE
+# float) on 16-bit PCM (Korg MS-10 Crash.wav, "no decoder"). The header is
+# repaired and the sample bytes are left alone. A file that still will not
+# convert is skipped and named in the summary; the rest of the pack is staged.
+#
 # Targets (the only place device rules live is target_spec / print_target_limits):
-#   m8     16-bit PCM WAV. Files that are not already 16-bit are resampled
-#          to 44.1 kHz. --card copies into <card>/Samples/.
+#   m8     16-bit PCM WAV. A WAV that is already 16-bit is copied as-is.
+#          Any other WAV, and AIFF/FLAC/MP3/OGG, is rewritten to 44.1 kHz.
+#          --card copies into <card>/Samples/.
 #   sp404  48 kHz / 16-bit linear WAV for the SP-404MKII IMPORT folder.
 #          --card copies into <card>/IMPORT/ and never deletes card files.
 #
@@ -37,6 +48,16 @@ EXTRACT="$SCRIPT_DIR/content/.cache/drum-extract"
 OUT="$SCRIPT_DIR/content/drums"
 META_URL="https://archive.org/metadata/drum-machines-collection"
 BASE="https://archive.org/download/drum-machines-collection"
+
+# ffmpeg decodes these. AIFF is what the non-WAV packs in this archive
+# actually contain; flac/mp3/ogg are accepted when a pack has them.
+# is_audio_file and find_audio both use this list.
+AUDIO_EXTS=(wav aif aiff flac mp3 ogg)
+
+# Set by prepare_wav_input / transcode_wav for the file currently staging.
+REPAIR_TMP=""
+TRANSCODE_RC=0
+TRANSCODE_ERR=""
 
 # The previous hardcoded set, still available as --preset classics.
 CLASSICS=(
@@ -280,29 +301,48 @@ extract_one() {
     mv -- "$tmp" "$ex" || return 1
 }
 
-# Descend through a single wrapper directory that holds no wavs of its own.
+is_audio_file() {
+    local lower=${1,,} ext
+    for ext in "${AUDIO_EXTS[@]}"; do
+        [[ "$lower" == *."$ext" ]] && return 0
+    done
+    return 1
+}
+
+find_audio() {
+    local root=$1 ext
+    local -a expr=()
+    for ext in "${AUDIO_EXTS[@]}"; do
+        if ((${#expr[@]} > 0)); then
+            expr+=(-o)
+        fi
+        expr+=(-iname "*.${ext}")
+    done
+    find "$root" -type f \( "${expr[@]}" \) -print0
+}
+
+# Descend through a single wrapper directory that holds no audio of its own.
 content_root() {
-    local d=$1 e lower depth=0
+    local d=$1 e depth=0
     local -a subs=()
     while (( depth < 8 )); do
         depth=$((depth + 1))
         subs=()
-        local has_wav=0 any=0
+        local has_audio=0 any=0
         for e in "$d"/*; do
             [[ -e "$e" ]] || continue
             any=1
             if [[ -d "$e" ]]; then
                 subs+=("$e")
             fi
-            lower=${e,,}
-            if [[ "$lower" == *.wav ]]; then
-                has_wav=1
+            if is_audio_file "$e"; then
+                has_audio=1
             fi
         done
         if [[ "$any" -eq 0 ]]; then
             break
         fi
-        if [[ "${#subs[@]}" -eq 1 && "$has_wav" -eq 0 ]]; then
+        if [[ "${#subs[@]}" -eq 1 && "$has_audio" -eq 0 ]]; then
             d=${subs[0]}
         else
             break
@@ -327,16 +367,133 @@ probe_audio() {
         -of default=noprint_wrappers=1 -- "$1" </dev/null 2>/dev/null || true)
 }
 
+# Rewrite a WAV ffmpeg refuses to open, when the samples themselves are fine.
+# Returns 0 and writes dst when it changed something.
+#   LIST size < 4: ffmpeg errors "too short LIST tag" and drops the file.
+#     Roland SH3A, Yamaha CS15D, and Yamaha CS-40M end with a 0-byte LIST
+#     after a normal fmt+data (the RIFF size also stops short of that tail).
+#   Format tag 3 (IEEE float) with an integer block align: ffmpeg reports
+#     "no decoder". Korg MS-10 Crash.wav is 16-bit PCM mis-tagged as float.
+# Anything else is left untouched so the caller uses the original.
+repair_wav_header() {
+    python3 - "$1" "$2" <<'PY'
+import struct
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+data = open(src, "rb").read()
+if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+    sys.exit(1)
+
+out = bytearray(data[:12])
+changed = False
+off = 12
+n = len(data)
+while off + 8 <= n:
+    cid = data[off : off + 4]
+    sz = struct.unpack_from("<I", data, off + 4)[0]
+    pad = sz & 1
+    step = 8 + sz + pad
+    if sz > n or off + 8 + sz > n:
+        break
+    end = min(n, off + step)
+    chunk = bytearray(data[off:end])
+    if cid == b"LIST" and sz < 4:
+        changed = True
+        off = end
+        continue
+    if cid == b"fmt " and sz >= 16:
+        fmt, ch, _rate, _br, balign, bits = struct.unpack_from("<HHIIHH", chunk, 8)
+        if (
+            fmt == 3
+            and bits in (8, 16, 24)
+            and ch > 0
+            and balign == ch * (bits // 8)
+        ):
+            struct.pack_into("<H", chunk, 8, 1)
+            changed = True
+    out += chunk
+    off = end
+
+if not changed:
+    sys.exit(1)
+struct.pack_into("<I", out, 4, len(out) - 8)
+with open(dst, "wb") as fh:
+    fh.write(out)
+PY
+}
+
+clear_repair() {
+    if [[ -n "${REPAIR_TMP:-}" ]]; then
+        rm -f -- "$REPAIR_TMP"
+        REPAIR_TMP=""
+    fi
+}
+
+# Probe src. When it is a WAV ffmpeg cannot identify, probe a repaired copy
+# instead and leave that path in REPAIR_TMP. Sample bytes are not rewritten.
+prepare_wav_input() {
+    local src=$1 tmp
+    REPAIR_TMP=""
+    probe_audio "$src"
+    [[ ${src,,} == *.wav ]] || return 0
+    if [[ -n "$PROBE_CODEC" && "$PROBE_CODEC" != unknown && "$PROBE_CODEC" != none ]]; then
+        return 0
+    fi
+    tmp=$(mktemp)
+    if repair_wav_header "$src" "$tmp"; then
+        REPAIR_TMP=$tmp
+        probe_audio "$REPAIR_TMP"
+        return 0
+    fi
+    rm -f -- "$tmp"
+}
+
+# stderr is captured so a benign per-file decode note (a truncated trailing
+# PCM sample logs "Invalid PCM packet" at error level and still exits 0)
+# does not flood the terminal. A nonzero exit is the caller's to record.
+transcode_wav() {
+    local input=$1 dest=$2 arate=$3 err
+    err=$(mktemp)
+    TRANSCODE_RC=0
+    TRANSCODE_ERR=""
+    ffmpeg -nostdin -y -hide_banner -loglevel error \
+        -i "$input" -map 0:a:0 -ar "$arate" -c:a pcm_s16le -f wav \
+        "$dest" </dev/null 2>"$err" || TRANSCODE_RC=$?
+    TRANSCODE_ERR=$(tr '\n' ' ' <"$err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')
+    rm -f -- "$err"
+    if [[ -z "$TRANSCODE_ERR" ]]; then
+        TRANSCODE_ERR="no error text"
+    elif ((${#TRANSCODE_ERR} > 300)); then
+        TRANSCODE_ERR="${TRANSCODE_ERR:0:300}..."
+    fi
+    return "$TRANSCODE_RC"
+}
+
+record_skip() {
+    local file=$1 rel=$2 msg=$3
+    rel=${rel//$'\t'/ }
+    msg=${msg//$'\t'/ }
+    printf '%s\t%s\n' "$rel" "$msg" >> "$file"
+    printf '!! %s: %s: %s\n' "$(basename -- "$file")" "$rel" "$msg" >&2
+}
+
 stage_tree() {
-    local root=$1 dest_root=$2 rate=$3 when=$4
+    local root=$1 dest_root=$2 rate=$3 when=$4 skip_file=$5
     local -A used=()
-    local src rel safe cand n stem ext dest copy count=0
+    local src rel rel_src safe cand n stem ext dest input copy count=0 rc=0
     while IFS= read -r -d '' src; do
-        rel=${src#"$root"/}
+        rel_src=${src#"$root"/}
+        rel=$rel_src
+        # Staged names end in .wav. A copied .WAV keeps the source spelling.
+        if [[ ${rel,,} != *.wav ]]; then
+            rel="${rel%.*}.wav"
+        fi
         safe=$(sanitize_rel "$rel")
         cand=$safe
         n=2
-        while [[ -n ${used[$cand]+x} && ${used[$cand]} != "$rel" ]]; do
+        # Key on the source path. foo.aif and foo.wav both stage as foo.wav.
+        while [[ -n ${used[$cand]+x} && ${used[$cand]} != "$rel_src" ]]; do
             ext=""
             stem=$safe
             if [[ "$safe" == *.* ]]; then
@@ -346,46 +503,99 @@ stage_tree() {
             cand="${stem}-$n${ext}"
             n=$((n + 1))
         done
-        used[$cand]=$rel
+        used[$cand]=$rel_src
         safe=$cand
         dest="$dest_root/$safe"
-        mkdir -p -- "$(dirname -- "$dest")" || return 1
+        if ! mkdir -p -- "$(dirname -- "$dest")"; then
+            record_skip "$skip_file" "$rel_src" "could not create output directory"
+            continue
+        fi
 
-        probe_audio "$src"
+        prepare_wav_input "$src"
+        input=$src
+        if [[ -n "${REPAIR_TMP:-}" ]]; then
+            input=$REPAIR_TMP
+        fi
+
+        # Copy only WAV, and only under the target's existing rule.
+        # Non-WAV is always rewritten so a 16-bit AIFF is not renamed to .wav.
         copy=0
-        if [[ "$when" == non16 && "$PROBE_BITS" == 16 ]]; then
+        if [[ ${src,,} == *.wav && "$when" == non16 && "$PROBE_BITS" == 16 ]]; then
             copy=1
-        elif [[ "$when" == always && "$PROBE_BITS" == 16 \
+        elif [[ ${src,,} == *.wav && "$when" == always && "$PROBE_BITS" == 16 \
             && "$PROBE_RATE" == "$rate" && "$PROBE_CODEC" == pcm_s16le ]]; then
             copy=1
         fi
 
         if [[ "$copy" == 1 ]]; then
-            if [[ -f "$dest" ]] && [[ "$(stat -c%s -- "$dest")" == "$(stat -c%s -- "$src")" ]]; then
+            if [[ -f "$dest" ]] && [[ "$(stat -c%s -- "$dest")" == "$(stat -c%s -- "$input")" ]]; then
                 count=$((count + 1))
+                clear_repair
                 continue
             fi
-            cp -f -- "$src" "$dest.part" || return 1
-            mv -f -- "$dest.part" "$dest" || return 1
+            if ! cp -f -- "$input" "$dest.part"; then
+                rm -f -- "$dest.part"
+                record_skip "$skip_file" "$rel_src" "copy failed"
+                clear_repair
+                continue
+            fi
+            if ! mv -f -- "$dest.part" "$dest"; then
+                rm -f -- "$dest.part"
+                record_skip "$skip_file" "$rel_src" "could not move staged file into place"
+                clear_repair
+                continue
+            fi
         else
             if [[ -f "$dest" && "$dest" -nt "$src" ]]; then
                 probe_audio "$dest"
                 if [[ "$PROBE_BITS" == 16 && "$PROBE_RATE" == "$rate" \
                     && "$PROBE_CODEC" == pcm_s16le ]]; then
                     count=$((count + 1))
+                    clear_repair
                     continue
                 fi
             fi
-            if ! ffmpeg -nostdin -y -hide_banner -loglevel error \
-                -i "$src" -map 0:a:0 -ar "$rate" -c:a pcm_s16le -f wav \
-                "$dest.part" </dev/null; then
+            if ! transcode_wav "$input" "$dest.part" "$rate"; then
                 rm -f -- "$dest.part"
-                return 1
+                rc=$TRANSCODE_RC
+                # Header looked readable but the decoder still refused it.
+                if [[ -z "${REPAIR_TMP:-}" ]]; then
+                    REPAIR_TMP=$(mktemp)
+                    if repair_wav_header "$src" "$REPAIR_TMP"; then
+                        if transcode_wav "$REPAIR_TMP" "$dest.part" "$rate"; then
+                            if mv -f -- "$dest.part" "$dest"; then
+                                count=$((count + 1))
+                                clear_repair
+                                continue
+                            fi
+                            rm -f -- "$dest.part"
+                            record_skip "$skip_file" "$rel_src" \
+                                "could not move staged file into place"
+                            clear_repair
+                            continue
+                        fi
+                        rm -f -- "$dest.part"
+                        rc=$TRANSCODE_RC
+                    else
+                        rm -f -- "$REPAIR_TMP"
+                        REPAIR_TMP=""
+                    fi
+                fi
+                record_skip "$skip_file" "$rel_src" \
+                    "ffmpeg exited ${rc}: ${TRANSCODE_ERR:-no error text}"
+                clear_repair
+                continue
             fi
-            mv -f -- "$dest.part" "$dest" || return 1
+            if ! mv -f -- "$dest.part" "$dest"; then
+                rm -f -- "$dest.part"
+                record_skip "$skip_file" "$rel_src" "could not move staged file into place"
+                clear_repair
+                continue
+            fi
         fi
         count=$((count + 1))
-    done < <(find "$root" -type f -iname '*.wav' -print0)
+        clear_repair
+    done < <(find_audio "$root")
     printf '%s\n' "$count"
 }
 
@@ -395,9 +605,37 @@ note_fail() {
     printf '!! %s: %s\n' "$folder" "$msg" >&2
 }
 
+# Pack produced nothing usable. skipf is "source<TAB>reason" lines.
+fail_skipped_pack() {
+    local folder=$1 skipf=$2 rel msg
+    {
+        printf 'stage failed\n'
+        while IFS=$'\t' read -r rel msg || [[ -n "${rel:-}" ]]; do
+            [[ -n "${rel:-}" ]] || continue
+            printf '%s: %s\n' "$rel" "$msg"
+        done < "$skipf"
+    } > "$FAIL_DIR/$folder"
+    printf '!! %s: stage failed\n' "$folder" >&2
+    rm -f -- "$skipf"
+}
+
+# One pack-level failure, possibly with one line per file under it.
+print_fail_file() {
+    local file=$1 folder line first=1
+    folder=$(basename -- "$file")
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if (( first == 1 )); then
+            printf '  %s: %s\n' "$folder" "$line"
+            first=0
+        else
+            printf '    %s\n' "$line"
+        fi
+    done < "$file"
+}
+
 process_one() {
     local zip=$1 size=$2 md5=$3 folder=$4
-    local lockpath="$CACHE/$folder.lock" lockfd=0 root n
+    local lockpath="$CACHE/$folder.lock" lockfd=0 root n="" skipf
     if command -v flock >/dev/null 2>&1; then
         exec {lockfd}>"$lockpath"
         flock "$lockfd"
@@ -411,16 +649,37 @@ process_one() {
         return 0
     fi
     root=$(content_root "$EXTRACT/$folder")
-    if ! n=$(stage_tree "$root" "$OUT/$TARGET/$folder" "$RATE" "$WHEN"); then
-        note_fail "$folder" "stage failed"
+    skipf="$SKIP_DIR/$folder"
+    rm -f -- "$skipf"
+    if ! n=$(stage_tree "$root" "$OUT/$TARGET/$folder" "$RATE" "$WHEN" "$skipf"); then
+        if [[ -s "$skipf" ]]; then
+            fail_skipped_pack "$folder" "$skipf"
+        else
+            note_fail "$folder" "stage failed: unknown error"
+        fi
+        return 0
+    fi
+    if [[ ! "$n" =~ ^[0-9]+$ ]]; then
+        note_fail "$folder" "stage failed: no file count"
+        rm -f -- "$skipf"
         return 0
     fi
     if [[ "$n" == 0 ]]; then
-        note_fail "$folder" "no wav files"
+        if [[ -s "$skipf" ]]; then
+            fail_skipped_pack "$folder" "$skipf"
+        else
+            note_fail "$folder" "no audio files"
+        fi
         return 0
     fi
     printf '%s\n' "$n" > "$STAT_DIR/$folder"
-    printf '>> %s: %s wavs\n' "$folder" "$n"
+    if [[ -s "$skipf" ]]; then
+        local skipped
+        skipped=$(wc -l < "$skipf" | tr -d ' ')
+        printf '>> %s: %s wavs, %s skipped\n' "$folder" "$n" "$skipped"
+    else
+        printf '>> %s: %s wavs\n' "$folder" "$n"
+    fi
 }
 
 copy_card() {
@@ -503,8 +762,9 @@ print_target_limits() {
     if [[ "$TARGET" == m8 ]]; then
         cat <<EOF
 
-M8: 16-bit PCM only. Files that are already 16-bit are copied as they are;
-anything else is rewritten to 44.1 kHz / 16-bit. Land the tree in /Samples.
+M8: 16-bit PCM only. A WAV that is already 16-bit is copied as it is;
+any other WAV, and AIFF/FLAC/MP3/OGG, is rewritten to 44.1 kHz / 16-bit.
+Land the tree in /Samples.
 EOF
         return 0
     fi
@@ -668,7 +928,8 @@ RUN_DIR=$(mktemp -d)
 trap 'rm -rf "$RUN_DIR"' EXIT
 FAIL_DIR="$RUN_DIR/fail"
 STAT_DIR="$RUN_DIR/stat"
-mkdir -p -- "$FAIL_DIR" "$STAT_DIR" "$CACHE" "$EXTRACT" "$OUT"
+SKIP_DIR="$RUN_DIR/skip"
+mkdir -p -- "$FAIL_DIR" "$STAT_DIR" "$SKIP_DIR" "$CACHE" "$EXTRACT" "$OUT"
 
 load_rows "$RUN_DIR/metadata.json" "$RUN_DIR/rows.tsv"
 
@@ -807,11 +1068,26 @@ if [[ -n "$CARD" ]]; then
 fi
 
 mapfile -t fail_files < <(find "$FAIL_DIR" -type f | sort)
-if ((${#fail_files[@]} > 0 || card_rc != 0)); then
+mapfile -t skip_files < <(find "$SKIP_DIR" -type f | sort)
+if ((${#fail_files[@]} > 0 || ${#skip_files[@]} > 0 || card_rc != 0)); then
     if ((${#fail_files[@]} > 0)); then
         printf '\nFailures (%s):\n' "${#fail_files[@]}"
         for f in "${fail_files[@]}"; do
-            printf '  %s: %s\n' "$(basename -- "$f")" "$(<"$f")"
+            print_fail_file "$f"
+        done
+    fi
+    if ((${#skip_files[@]} > 0)); then
+        skip_n=0
+        for f in "${skip_files[@]}"; do
+            skip_n=$((skip_n + $(wc -l < "$f" | tr -d ' ')))
+        done
+        printf '\nSkipped files (%s):\n' "$skip_n"
+        for f in "${skip_files[@]}"; do
+            folder=$(basename -- "$f")
+            while IFS=$'\t' read -r rel msg || [[ -n "${rel:-}" ]]; do
+                [[ -n "${rel:-}" ]] || continue
+                printf '  %s: %s: %s\n' "$folder" "$rel" "$msg"
+            done < "$f"
         done
     fi
     if (( card_rc != 0 )); then
