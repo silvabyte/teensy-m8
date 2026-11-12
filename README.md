@@ -94,17 +94,25 @@ M8 and then SP-404 does not download twice. A finished zip is skipped when its
 size matches the metadata (a new download is also checked against the md5).
 Partial downloads stay in a `.part` file. Already-staged WAV files are skipped.
 One machine failing is logged; the rest continue; the script exits non-zero
-and prints the failures.
+and prints the failures. A file ffmpeg still cannot decode is skipped and
+listed the same way, with the filename and ffmpeg's error; the other files
+in that pack are still staged.
+
+Packs are not all WAV. AIFF, FLAC, MP3, and OGG are converted to WAV and the
+staged names end in `.wav`. A WAV ffmpeg rejects because of a zero-length
+LIST chunk, or a float format tag on integer PCM, is repaired without
+changing the samples.
 
 `--card` copies the staged tree with `rsync -a` when rsync exists, otherwise
 `cp -a`. It never deletes files already on the card.
 
-**M8** (`--target m8`, the default). 16-bit PCM WAV. A file that is already
-16-bit is copied unchanged; anything else is rewritten to 44.1 kHz / 16-bit.
-`--card` puts each machine in `/Samples/<Machine>/`.
+**M8** (`--target m8`, the default). 16-bit PCM WAV. A WAV that is already
+16-bit is copied unchanged; any other WAV, and AIFF/FLAC/MP3/OGG, is rewritten
+to 44.1 kHz / 16-bit. `--card` puts each machine in `/Samples/<Machine>/`.
 
 **SP-404MKII** (`--target sp404`). 48 kHz / 16-bit linear WAV, which is what
-the unit stores. SD import accepts 16-bit linear WAV, AIFF, or MP3 from the
+the unit stores. Source AIFF, FLAC, MP3, and OGG are converted to that WAV.
+SD import accepts 16-bit linear WAV, AIFF, or MP3 from the
 `IMPORT` folder, including subfolders, and converts imports to 48 kHz / 16-bit.
 `--card` puts each machine in `/IMPORT/<Machine>/`.
 
